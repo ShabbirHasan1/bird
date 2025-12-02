@@ -79,7 +79,15 @@ function decryptCookieValue(encryptedHex: string): string | null {
     let decrypted = decipher.update(encryptedData);
     decrypted = Buffer.concat([decrypted, decipher.final()]);
 
-    return decrypted.toString('utf8');
+    // Chrome v10 cookies have key material prepended before the actual value
+    // Twitter cookies are hex strings, so extract the longest hex sequence
+    const decryptedStr = decrypted.toString('utf8');
+    const hexMatch = decryptedStr.match(/[a-f0-9]{32,}/i);
+    if (hexMatch) {
+      return hexMatch[0];
+    }
+    // Fallback: keep only printable ASCII characters
+    return decryptedStr.replace(/[^\x20-\x7E]/g, '');
   } catch {
     return null;
   }

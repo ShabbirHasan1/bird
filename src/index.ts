@@ -150,6 +150,110 @@ program
     }
   });
 
+// Search command - find tweets
+program
+  .command('search')
+  .description('Search for tweets')
+  .argument('<query>', 'Search query (e.g., "@clawdbot" or "from:clawdbot")')
+  .option('-n, --count <number>', 'Number of tweets to fetch', '10')
+  .option('--json', 'Output as JSON')
+  .action(async (query: string, cmdOpts: { count?: string; json?: boolean }) => {
+    const opts = program.opts();
+    const { cookies, warnings } = await resolveCredentials({
+      authToken: opts.authToken,
+      ct0: opts.ct0,
+      chromeProfile: opts.chromeProfile,
+    });
+
+    for (const warning of warnings) {
+      console.error(`⚠️  ${warning}`);
+    }
+
+    if (!cookies.authToken || !cookies.ct0) {
+      console.error('❌ Missing required credentials');
+      process.exit(1);
+    }
+
+    const client = new TwitterClient({ cookies });
+    const count = parseInt(cmdOpts.count || '10', 10);
+    const result = await client.search(query, count);
+
+    if (result.success && result.tweets) {
+      if (cmdOpts.json) {
+        console.log(JSON.stringify(result.tweets, null, 2));
+      } else {
+        if (result.tweets.length === 0) {
+          console.log('No tweets found.');
+        } else {
+          for (const tweet of result.tweets) {
+            console.log(`\n@${tweet.author.username} (${tweet.author.name}):`);
+            console.log(tweet.text);
+            if (tweet.createdAt) {
+              console.log(`📅 ${tweet.createdAt}`);
+            }
+            console.log(`🔗 https://x.com/${tweet.author.username}/status/${tweet.id}`);
+            console.log('─'.repeat(50));
+          }
+        }
+      }
+    } else {
+      console.error(`❌ Search failed: ${result.error}`);
+      process.exit(1);
+    }
+  });
+
+// Mentions command - shortcut to search for @username mentions
+program
+  .command('mentions')
+  .description('Find tweets mentioning @clawdbot')
+  .option('-n, --count <number>', 'Number of tweets to fetch', '10')
+  .option('--json', 'Output as JSON')
+  .action(async (cmdOpts: { count?: string; json?: boolean }) => {
+    const opts = program.opts();
+    const { cookies, warnings } = await resolveCredentials({
+      authToken: opts.authToken,
+      ct0: opts.ct0,
+      chromeProfile: opts.chromeProfile,
+    });
+
+    for (const warning of warnings) {
+      console.error(`⚠️  ${warning}`);
+    }
+
+    if (!cookies.authToken || !cookies.ct0) {
+      console.error('❌ Missing required credentials');
+      process.exit(1);
+    }
+
+    const client = new TwitterClient({ cookies });
+    const count = parseInt(cmdOpts.count || '10', 10);
+    const result = await client.search('@clawdbot', count);
+
+    if (result.success && result.tweets) {
+      if (cmdOpts.json) {
+        console.log(JSON.stringify(result.tweets, null, 2));
+      } else {
+        if (result.tweets.length === 0) {
+          console.log('No mentions found.');
+        } else {
+          console.log(`Found ${result.tweets.length} mentions:\n`);
+          for (const tweet of result.tweets) {
+            console.log(`@${tweet.author.username} (${tweet.author.name}):`);
+            console.log(tweet.text);
+            if (tweet.createdAt) {
+              console.log(`📅 ${tweet.createdAt}`);
+            }
+            console.log(`🔗 https://x.com/${tweet.author.username}/status/${tweet.id}`);
+            console.log('─'.repeat(50));
+          }
+        }
+      }
+    } else {
+      console.error(`❌ Failed to fetch mentions: ${result.error}`);
+      process.exit(1);
+    }
+  });
+
 // Check command - verify credentials
 program
   .command('check')
