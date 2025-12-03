@@ -98,9 +98,11 @@ describe('cookies', () => {
       const result = await resolveCredentials({});
 
       expect(result.warnings).toContain(
-        'Missing auth_token - provide via --auth-token, AUTH_TOKEN env var, or login to x.com in Chrome',
+        'Missing auth_token - provide via --auth-token, AUTH_TOKEN env var, or login to x.com in Chrome/Firefox',
       );
-      expect(result.warnings).toContain('Missing ct0 - provide via --ct0, CT0 env var, or login to x.com in Chrome');
+      expect(result.warnings).toContain(
+        'Missing ct0 - provide via --ct0, CT0 env var, or login to x.com in Chrome/Firefox',
+      );
     });
   });
 });

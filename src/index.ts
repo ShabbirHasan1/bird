@@ -10,6 +10,11 @@
  */
 
 import { Command } from 'commander';
+import JSON5 from 'json5';
+import kleur from 'kleur';
+import { homedir } from 'node:os';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { resolveCredentials } from './lib/cookies.js';
 import { extractTweetId } from './lib/extract-tweet-id.js';
 import { TwitterClient, type TweetData } from './lib/twitter-client.js';
@@ -17,19 +22,87 @@ import { SweetisticsClient } from './lib/sweetistics-client.js';
 
 const program = new Command();
 
+const isTty = process.stdout.isTTY;
+const wrap = (styler: (text: string) => string) => (text: string) => (isTty ? styler(text) : text);
+
+const colors = {
+  banner: wrap((t) => kleur.bold().blue(t)),
+  subtitle: wrap((t) => kleur.dim(t)),
+  section: wrap((t) => kleur.bold().white(t)),
+  bullet: wrap((t) => kleur.blue(t)),
+  command: wrap((t) => kleur.bold().cyan(t)),
+  option: wrap((t) => kleur.cyan(t)),
+  argument: wrap((t) => kleur.magenta(t)),
+  description: wrap((t) => kleur.white(t)),
+  muted: wrap((t) => kleur.gray(t)),
+  accent: wrap((t) => kleur.green(t)),
+};
+
+type BirdConfig = {
+  engine?: EngineMode;
+  chromeProfile?: string;
+  firefoxProfile?: string;
+  sweetisticsApiKey?: string;
+  sweetisticsBaseUrl?: string;
+};
+
+function readConfigFile(path: string): Partial<BirdConfig> {
+  if (!existsSync(path)) return {};
+  try {
+    const raw = readFileSync(path, 'utf8');
+    const parsed = JSON5.parse(raw) as Partial<BirdConfig>;
+    return parsed ?? {};
+  } catch (error) {
+    console.error(colors.muted(`⚠️  Failed to parse config at ${path}: ${error instanceof Error ? error.message : String(error)}`));
+    return {};
+  }
+}
+
+function loadConfig(): BirdConfig {
+  const globalPath = join(homedir(), '.config', 'bird', 'config.json5');
+  const localPath = join(process.cwd(), '.birdrc.json5');
+
+  return {
+    ...readConfigFile(globalPath),
+    ...readConfigFile(localPath),
+  };
+}
+
+const config = loadConfig();
+
+program.addHelpText('beforeAll', () => `${colors.banner('bird CLI')} ${colors.subtitle('— tweet from your terminal')}`);
+
 program.name('bird').description('Post tweets and replies via Twitter/X GraphQL API').version('0.1.0');
+
+const formatExample = (command: string, description: string) =>
+  `${colors.command(`  ${command}`)}\n${colors.muted(`    ${description}`)}`;
+
+program.addHelpText(
+  'afterAll',
+  () => `\n${colors.section('Examples')}\n${[
+    formatExample('bird whoami', 'Show the logged-in account via GraphQL cookies'),
+    formatExample('bird --firefox-profile default-release whoami', 'Use Firefox profile cookies'),
+    formatExample('bird tweet "hello from bird"', 'Send a tweet'),
+    formatExample('bird replies https://x.com/user/status/1234567890123456789', 'Check replies to a tweet'),
+  ].join('\n\n')}`,
+);
 
 // Global options for authentication
 program
   .option('--auth-token <token>', 'Twitter auth_token cookie')
   .option('--ct0 <token>', 'Twitter ct0 cookie')
-  .option('--chrome-profile <name>', 'Chrome profile name for cookie extraction')
+  .option('--chrome-profile <name>', 'Chrome profile name for cookie extraction', config.chromeProfile)
+  .option('--firefox-profile <name>', 'Firefox profile name for cookie extraction', config.firefoxProfile)
   .option('--sweetistics-api-key <key>', 'Sweetistics API key (or set SWEETISTICS_API_KEY)')
-  .option('--sweetistics-base-url <url>', 'Sweetistics base URL', process.env.SWEETISTICS_BASE_URL || 'https://sweetistics.com')
+  .option(
+    '--sweetistics-base-url <url>',
+    'Sweetistics base URL',
+    config.sweetisticsBaseUrl || process.env.SWEETISTICS_BASE_URL || 'https://sweetistics.com',
+  )
   .option(
     '--engine <engine>',
     'Engine: graphql | sweetistics | auto',
-    process.env.BIRD_ENGINE || 'auto',
+    process.env.BIRD_ENGINE || config.engine || 'auto',
   );
 
 type EngineMode = 'graphql' | 'sweetistics' | 'auto';
@@ -92,7 +165,10 @@ program
   .argument('<text>', 'Tweet text')
   .action(async (text: string) => {
     const opts = program.opts();
-    const sweetistics = resolveSweetisticsConfig(opts);
+    const sweetistics = resolveSweetisticsConfig({
+      sweetisticsApiKey: opts.sweetisticsApiKey || config.sweetisticsApiKey,
+      sweetisticsBaseUrl: opts.sweetisticsBaseUrl || config.sweetisticsBaseUrl,
+    });
     const engine = resolveEngineMode(opts.engine);
     const useSweetistics = shouldUseSweetistics(engine, Boolean(sweetistics.apiKey));
 
@@ -125,7 +201,8 @@ program
     const { cookies, warnings } = await resolveCredentials({
       authToken: opts.authToken,
       ct0: opts.ct0,
-      chromeProfile: opts.chromeProfile,
+      chromeProfile: opts.chromeProfile || config.chromeProfile,
+      firefoxProfile: opts.firefoxProfile || config.firefoxProfile,
     });
 
     for (const warning of warnings) {
@@ -161,7 +238,10 @@ program
   .argument('<text>', 'Reply text')
   .action(async (tweetIdOrUrl: string, text: string) => {
     const opts = program.opts();
-    const sweetistics = resolveSweetisticsConfig(opts);
+    const sweetistics = resolveSweetisticsConfig({
+      sweetisticsApiKey: opts.sweetisticsApiKey || config.sweetisticsApiKey,
+      sweetisticsBaseUrl: opts.sweetisticsBaseUrl || config.sweetisticsBaseUrl,
+    });
     const engine = resolveEngineMode(opts.engine);
     const useSweetistics = shouldUseSweetistics(engine, Boolean(sweetistics.apiKey));
     const tweetId = extractTweetId(tweetIdOrUrl);
@@ -195,7 +275,8 @@ program
     const { cookies, warnings } = await resolveCredentials({
       authToken: opts.authToken,
       ct0: opts.ct0,
-      chromeProfile: opts.chromeProfile,
+      chromeProfile: opts.chromeProfile || config.chromeProfile,
+      firefoxProfile: opts.firefoxProfile || config.firefoxProfile,
     });
 
     for (const warning of warnings) {
@@ -233,7 +314,10 @@ program
   .option('--json', 'Output as JSON')
   .action(async (tweetIdOrUrl: string, cmdOpts: { json?: boolean }) => {
     const opts = program.opts();
-    const sweetistics = resolveSweetisticsConfig(opts);
+    const sweetistics = resolveSweetisticsConfig({
+      sweetisticsApiKey: opts.sweetisticsApiKey || config.sweetisticsApiKey,
+      sweetisticsBaseUrl: opts.sweetisticsBaseUrl || config.sweetisticsBaseUrl,
+    });
     const engine = resolveEngineMode(opts.engine);
     const useSweetistics = shouldUseSweetistics(engine, Boolean(sweetistics.apiKey));
 
@@ -267,7 +351,8 @@ program
     const { cookies, warnings } = await resolveCredentials({
       authToken: opts.authToken,
       ct0: opts.ct0,
-      chromeProfile: opts.chromeProfile,
+      chromeProfile: opts.chromeProfile || config.chromeProfile,
+      firefoxProfile: opts.firefoxProfile || config.firefoxProfile,
     });
 
     for (const warning of warnings) {
@@ -309,7 +394,10 @@ program
   .option('--json', 'Output as JSON')
   .action(async (tweetIdOrUrl: string, cmdOpts: { json?: boolean }) => {
     const opts = program.opts();
-    const sweetistics = resolveSweetisticsConfig(opts);
+    const sweetistics = resolveSweetisticsConfig({
+      sweetisticsApiKey: opts.sweetisticsApiKey || config.sweetisticsApiKey,
+      sweetisticsBaseUrl: opts.sweetisticsBaseUrl || config.sweetisticsBaseUrl,
+    });
     const engine = resolveEngineMode(opts.engine);
     const useSweetistics = shouldUseSweetistics(engine, Boolean(sweetistics.apiKey));
     const tweetId = extractTweetId(tweetIdOrUrl);
@@ -331,7 +419,8 @@ program
     const { cookies, warnings } = await resolveCredentials({
       authToken: opts.authToken,
       ct0: opts.ct0,
-      chromeProfile: opts.chromeProfile,
+      chromeProfile: opts.chromeProfile || config.chromeProfile,
+      firefoxProfile: opts.firefoxProfile || config.firefoxProfile,
     });
 
     for (const warning of warnings) {
@@ -362,7 +451,10 @@ program
   .option('--json', 'Output as JSON')
   .action(async (tweetIdOrUrl: string, cmdOpts: { json?: boolean }) => {
     const opts = program.opts();
-    const sweetistics = resolveSweetisticsConfig(opts);
+    const sweetistics = resolveSweetisticsConfig({
+      sweetisticsApiKey: opts.sweetisticsApiKey || config.sweetisticsApiKey,
+      sweetisticsBaseUrl: opts.sweetisticsBaseUrl || config.sweetisticsBaseUrl,
+    });
     const engine = resolveEngineMode(opts.engine);
     const useSweetistics = shouldUseSweetistics(engine, Boolean(sweetistics.apiKey));
     const tweetId = extractTweetId(tweetIdOrUrl);
@@ -384,7 +476,8 @@ program
     const { cookies, warnings } = await resolveCredentials({
       authToken: opts.authToken,
       ct0: opts.ct0,
-      chromeProfile: opts.chromeProfile,
+      chromeProfile: opts.chromeProfile || config.chromeProfile,
+      firefoxProfile: opts.firefoxProfile || config.firefoxProfile,
     });
 
     for (const warning of warnings) {
@@ -417,7 +510,10 @@ program
   .action(async (query: string, cmdOpts: { count?: string; json?: boolean }) => {
     const opts = program.opts();
     const count = parseInt(cmdOpts.count || '10', 10);
-    const sweetistics = resolveSweetisticsConfig(opts);
+    const sweetistics = resolveSweetisticsConfig({
+      sweetisticsApiKey: opts.sweetisticsApiKey || config.sweetisticsApiKey,
+      sweetisticsBaseUrl: opts.sweetisticsBaseUrl || config.sweetisticsBaseUrl,
+    });
     const engine = resolveEngineMode(opts.engine);
     const useSweetistics = shouldUseSweetistics(engine, Boolean(sweetistics.apiKey));
 
@@ -439,7 +535,8 @@ program
     const { cookies, warnings } = await resolveCredentials({
       authToken: opts.authToken,
       ct0: opts.ct0,
-      chromeProfile: opts.chromeProfile,
+      chromeProfile: opts.chromeProfile || config.chromeProfile,
+      firefoxProfile: opts.firefoxProfile || config.firefoxProfile,
     });
 
     for (const warning of warnings) {
@@ -516,6 +613,71 @@ program
     }
   });
 
+// Whoami command - show the logged-in account
+program
+  .command('whoami')
+  .description('Show which Twitter account the current credentials belong to')
+  .action(async () => {
+    const opts = program.opts();
+    const sweetistics = resolveSweetisticsConfig(opts);
+    const engine = resolveEngineMode(opts.engine);
+    const useSweetistics = shouldUseSweetistics(engine, Boolean(sweetistics.apiKey));
+
+    if (useSweetistics) {
+      if (!sweetistics.apiKey) {
+        console.error('❌ Sweetistics engine selected but no API key provided.');
+        process.exit(1);
+      }
+
+      const client = new SweetisticsClient({ baseUrl: sweetistics.baseUrl, apiKey: sweetistics.apiKey });
+      const result = await client.getCurrentUser();
+
+      if (result.success && result.user) {
+        const handle = result.user.username ? `@${result.user.username}` : '(no handle)';
+        const name = result.user.name || handle;
+        console.log(`🙋 Logged in via Sweetistics as ${handle} (${name})`);
+        console.log(`🪪 User ID: ${result.user.id}`);
+        if (result.user.email) {
+          console.log(`📧 ${result.user.email}`);
+        }
+        return;
+      }
+
+      console.error(`❌ Failed to determine Sweetistics user: ${result.error ?? 'Unknown error'}`);
+      process.exit(1);
+    }
+
+    const { cookies, warnings } = await resolveCredentials({
+      authToken: opts.authToken,
+      ct0: opts.ct0,
+      chromeProfile: opts.chromeProfile,
+    });
+
+    for (const warning of warnings) {
+      console.error(`⚠️  ${warning}`);
+    }
+
+    if (!cookies.authToken || !cookies.ct0) {
+      console.error('❌ Missing required credentials');
+      process.exit(1);
+    }
+
+    if (cookies.source) {
+      console.error(`📍 Using credentials from: ${cookies.source}`);
+    }
+
+    const client = new TwitterClient({ cookies });
+    const result = await client.getCurrentUser();
+
+    if (result.success && result.user) {
+      console.log(`🙋 Logged in as @${result.user.username} (${result.user.name})`);
+      console.log(`🪪 User ID: ${result.user.id}`);
+    } else {
+      console.error(`❌ Failed to determine current user: ${result.error ?? 'Unknown error'}`);
+      process.exit(1);
+    }
+  });
+
 // Check command - verify credentials
 program
   .command('check')
@@ -564,5 +726,11 @@ program
       process.exit(1);
     }
   });
+
+// Show help when invoked without any subcommand
+if (process.argv.length <= 2) {
+  program.outputHelp();
+  process.exit(0);
+}
 
 program.parse();

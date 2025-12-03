@@ -39,6 +39,18 @@ export interface SweetisticsReadResult {
   error?: string;
 }
 
+export interface SweetisticsUserResult {
+  success: boolean;
+  user?: {
+    id: string;
+    username?: string | null;
+    name?: string | null;
+    email?: string | null;
+    profileImageUrl?: string | null;
+  };
+  error?: string;
+}
+
 type TrpcResponseEnvelope = { result?: { data?: unknown; error?: unknown } };
 
 function normalizeBaseUrl(value: string): string {
@@ -242,6 +254,80 @@ export class SweetisticsClient {
     });
 
     return { success: true, tweets };
+  }
+
+  async getCurrentUser(): Promise<SweetisticsUserResult> {
+    const headers = {
+      authorization: `Bearer ${this.apiKey}`,
+      'content-type': 'application/json',
+      ...(this.userAgent ? { 'user-agent': this.userAgent } : {}),
+    } satisfies Record<string, string>;
+
+    let response = await fetch(`${this.baseUrl}/api/trpc/user.getCurrent?batch=1`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ 0: { json: null } }),
+    });
+
+    // Some deployments only allow GET for queries; fall back if POST is not allowed
+    if (response.status === 405) {
+      response = await fetch(`${this.baseUrl}/api/trpc/user.getCurrent?input=${encodeURIComponent('null')}`, {
+        method: 'GET',
+        headers,
+      });
+    }
+
+    if (!response.ok) {
+      return { success: false, error: `HTTP ${response.status}` };
+    }
+
+    let body: any;
+    try {
+      body = await response.json();
+    } catch (error) {
+      return {
+        success: false,
+        error: `Sweetistics response parse failed: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+
+    const envelope = Array.isArray(body) ? body[0] : body;
+    const maybeError = envelope?.error?.message || envelope?.result?.error?.message;
+    if (maybeError) {
+      return { success: false, error: String(maybeError) };
+    }
+
+    let data = envelope?.result?.data?.json ?? envelope?.result?.data ?? envelope?.json ?? envelope;
+
+    try {
+      if (typeof data === 'string') {
+        data = devalueParse(data);
+      } else if (data && typeof data === 'object' && 'json' in (data as Record<string, unknown>)) {
+        const inner = (data as Record<string, unknown>).json;
+        data = typeof inner === 'string' ? devalueParse(inner) : inner;
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: `Sweetistics response decode failed: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+
+    const user = data && typeof data === 'object' ? data : null;
+    if (!user || typeof (user as any).id !== 'string') {
+      return { success: false, error: 'Malformed user payload from Sweetistics' };
+    }
+
+    return {
+      success: true,
+      user: {
+        id: String((user as any).id),
+        username: (user as any).username ?? (user as any).twitterUsername ?? null,
+        name: (user as any).name ?? null,
+        email: (user as any).email ?? null,
+        profileImageUrl: (user as any).profileImageUrl ?? null,
+      },
+    };
   }
 
   private async fetchConversation(

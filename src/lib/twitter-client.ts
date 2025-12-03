@@ -81,6 +81,16 @@ export interface SearchResult {
   error?: string;
 }
 
+export interface CurrentUserResult {
+  success: boolean;
+  user?: {
+    id: string;
+    username: string;
+    name: string;
+  };
+  error?: string;
+}
+
 export interface TwitterClientOptions {
   cookies: TwitterCookies;
   userAgent?: string;
@@ -681,6 +691,130 @@ export class TwitterClient {
         error: error instanceof Error ? error.message : String(error),
       };
     }
+  }
+
+  /**
+   * Fetch the account associated with the current cookies
+   */
+  async getCurrentUser(): Promise<CurrentUserResult> {
+    const candidateUrls = [
+      'https://x.com/i/api/account/settings.json',
+      'https://api.twitter.com/1.1/account/settings.json',
+      'https://x.com/i/api/account/verify_credentials.json?skip_status=true&include_entities=false',
+      'https://api.twitter.com/1.1/account/verify_credentials.json?skip_status=true&include_entities=false',
+    ];
+
+    let lastError: string | undefined;
+
+    for (const url of candidateUrls) {
+      try {
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: this.getHeaders(),
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          lastError = `HTTP ${response.status}: ${text.slice(0, 200)}`;
+          continue;
+        }
+
+        let data: any;
+        try {
+          data = await response.json();
+        } catch (error) {
+          lastError = error instanceof Error ? error.message : String(error);
+          continue;
+        }
+
+        const username =
+          typeof data?.screen_name === 'string'
+            ? data.screen_name
+            : typeof data?.user?.screen_name === 'string'
+              ? data.user.screen_name
+              : null;
+
+        const name =
+          typeof data?.name === 'string'
+            ? data.name
+            : typeof data?.user?.name === 'string'
+              ? data.user.name
+              : username ?? '';
+
+        const userId =
+          typeof data?.user_id === 'string'
+            ? data.user_id
+            : typeof data?.user_id_str === 'string'
+              ? data.user_id_str
+              : typeof data?.user?.id_str === 'string'
+                ? data.user.id_str
+                : typeof data?.user?.id === 'string'
+                  ? data.user.id
+                  : null;
+
+        if (username && userId) {
+          return {
+            success: true,
+            user: {
+              id: userId,
+              username,
+              name: name || username,
+            },
+          };
+        }
+
+        lastError = 'Could not determine current user from response';
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+      }
+    }
+
+    // Fallback: scrape the authenticated settings page (HTML) for screen_name/user_id
+    const profilePages = ['https://x.com/settings/account', 'https://twitter.com/settings/account'];
+    for (const page of profilePages) {
+      try {
+        const response = await fetch(page, {
+          headers: {
+            cookie: `auth_token=${this.authToken}; ct0=${this.ct0}`,
+            'user-agent': this.userAgent,
+          },
+        });
+
+        if (!response.ok) {
+          lastError = `HTTP ${response.status} (settings page)`;
+          continue;
+        }
+
+        const html = await response.text();
+        const usernameMatch = html.match(/"screen_name":"([^"]+)"/);
+        const idMatch = html.match(/"user_id"\s*:\s*"(\d+)"/);
+        const nameMatch = html.match(/"name":"([^"\\]*(?:\\.[^"\\]*)*)"/);
+
+        const username = usernameMatch?.[1];
+        const userId = idMatch?.[1];
+        const name = nameMatch?.[1]?.replace(/\\"/g, '"');
+
+        if (username && userId) {
+          return {
+            success: true,
+            user: {
+              id: userId,
+              username,
+              name: name || username,
+            },
+          };
+        }
+
+        lastError = 'Could not parse settings page for user info';
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+      }
+    }
+
+    return {
+      success: false,
+      error: lastError ?? 'Unknown error fetching current user',
+    };
   }
 
   /**
