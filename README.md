@@ -42,7 +42,7 @@ bird replies https://x.com/user/status/1234567890123456789
 ```
 
 Transport (engine) selection:
-- `--engine graphql|sweetistics|auto` (default `auto`).
+- `--engine graphql|sweetistics|auto` (default `graphql`).
   - `sweetistics`: use Sweetistics API key, no browser cookies needed.
   - `graphql`: use Twitter/X GraphQL with cookies (Chrome/Firefox/env/flags).
   - `auto`: Sweetistics if an API key is available, otherwise GraphQL.
@@ -52,31 +52,28 @@ You can set persistent defaults via config files (JSON5):
 - Global: `~/.config/bird/config.json5`
 - Project: `./.birdrc.json5` (overrides global)
 
-Example `~/.config/bird/config.json5`:
+Example `~/.config/bird/config.json5` (Firefox + GraphQL defaults):
 
 ```json5
 {
-  // Default to Sweetistics unless overridden by --engine or BIRD_ENGINE
-  engine: "sweetistics",
+  engine: "graphql",
   // Prefer Firefox cookies by default
   firefoxProfile: "default-release",
-  // Optional: Sweetistics defaults
-  sweetisticsApiKey: "sweet-...",
-  sweetisticsBaseUrl: "https://sweetistics.com"
+  // Optional: Sweetistics defaults if you want fallback/overrides
+  sweetisticsApiKey: "sweet-..."
 }
 ```
 
 Precedence: CLI flags > environment variables > project config > global config.
 
-To default to Firefox and Sweetistics, create `~/.config/bird/config.json5`:
+### Credential sources (macOS)
 
-```json5
-{
-  engine: "sweetistics",
-  firefoxProfile: "default-release",
-  sweetisticsApiKey: "sweet-..."
-}
-```
+Used only when transport resolves to **graphql**:
+- **Firefox (default)**: `~/Library/Application Support/Firefox/Profiles/<profile>/cookies.sqlite`. `--firefox-profile <name>` (defaults to `default-release` if present).
+- **Chrome**: `~/Library/Application Support/Google/Chrome/<Profile>/Cookies` (WAL/SHM copied too). `--chrome-profile <name>`.
+- **Env/flags** always override browser cookies.
+
+Transport is chosen first; then, if transport is GraphQL, the cookie source is resolved with the same precedence.
 
 ### Post a tweet
 

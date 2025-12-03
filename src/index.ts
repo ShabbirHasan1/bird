@@ -98,7 +98,11 @@ program
   .option('--auth-token <token>', 'Twitter auth_token cookie')
   .option('--ct0 <token>', 'Twitter ct0 cookie')
   .option('--chrome-profile <name>', 'Chrome profile name for cookie extraction', config.chromeProfile)
-  .option('--firefox-profile <name>', 'Firefox profile name for cookie extraction', config.firefoxProfile)
+  .option(
+    '--firefox-profile <name>',
+    'Firefox profile name for cookie extraction',
+    config.firefoxProfile || 'default-release',
+  )
   .option('--sweetistics-api-key <key>', 'Sweetistics API key (or set SWEETISTICS_API_KEY)')
   .option(
     '--sweetistics-base-url <url>',
@@ -108,7 +112,7 @@ program
   .option(
     '--engine <engine>',
     'Engine: graphql | sweetistics | auto',
-    process.env.BIRD_ENGINE || config.engine || 'auto',
+    process.env.BIRD_ENGINE || config.engine || 'graphql',
   );
 
 type EngineMode = 'graphql' | 'sweetistics' | 'auto';
@@ -227,6 +231,21 @@ program
     if (result.success) {
       console.log('✅ Tweet posted successfully!');
       console.log(`🔗 https://x.com/i/status/${result.tweetId}`);
+    } else if (sweetistics.apiKey) {
+      console.error(`⚠️ GraphQL tweet failed (${result.error}); trying Sweetistics fallback...`);
+      const fallback = await new SweetisticsClient({
+        baseUrl: sweetistics.baseUrl,
+        apiKey: sweetistics.apiKey,
+      }).tweet(text);
+      if (fallback.success) {
+        console.log('✅ Tweet posted via Sweetistics (fallback)!');
+        if (fallback.tweetId) {
+          console.log(`🔗 https://x.com/i/status/${fallback.tweetId}`);
+        }
+      } else {
+        console.error(`❌ Failed to post tweet: ${result.error} | Sweetistics fallback: ${fallback.error}`);
+        process.exit(1);
+      }
     } else {
       console.error(`❌ Failed to post tweet: ${result.error}`);
       process.exit(1);
@@ -303,6 +322,21 @@ program
     if (result.success) {
       console.log('✅ Reply posted successfully!');
       console.log(`🔗 https://x.com/i/status/${result.tweetId}`);
+    } else if (sweetistics.apiKey) {
+      console.error(`⚠️ GraphQL reply failed (${result.error}); trying Sweetistics fallback...`);
+      const fallback = await new SweetisticsClient({
+        baseUrl: sweetistics.baseUrl,
+        apiKey: sweetistics.apiKey,
+      }).tweet(text, tweetId);
+      if (fallback.success) {
+        console.log('✅ Reply posted via Sweetistics (fallback)!');
+        if (fallback.tweetId) {
+          console.log(`🔗 https://x.com/i/status/${fallback.tweetId}`);
+        }
+      } else {
+        console.error(`❌ Failed to post reply: ${result.error} | Sweetistics fallback: ${fallback.error}`);
+        process.exit(1);
+      }
     } else {
       console.error(`❌ Failed to post reply: ${result.error}`);
       process.exit(1);
@@ -383,6 +417,28 @@ program
           `❤️ ${result.tweet.likeCount ?? 0}  🔁 ${result.tweet.retweetCount ?? 0}  💬 ${result.tweet.replyCount ?? 0}`,
         );
       }
+    } else if (sweetistics.apiKey) {
+      console.error(`⚠️ GraphQL read failed (${result.error}); trying Sweetistics fallback...`);
+      const fallback = await new SweetisticsClient({ baseUrl: sweetistics.baseUrl, apiKey: sweetistics.apiKey }).read(
+        tweetId,
+      );
+      if (fallback.success && fallback.tweet) {
+        if (cmdOpts.json) {
+          console.log(JSON.stringify(fallback.tweet, null, 2));
+        } else {
+          console.log(`@${fallback.tweet.author.username} (${fallback.tweet.author.name}):`);
+          console.log(fallback.tweet.text);
+          if (fallback.tweet.createdAt) {
+            console.log(`\n📅 ${fallback.tweet.createdAt}`);
+          }
+          console.log(
+            `❤️ ${fallback.tweet.likeCount ?? 0}  🔁 ${fallback.tweet.retweetCount ?? 0}  💬 ${fallback.tweet.replyCount ?? 0}`,
+          );
+        }
+      } else {
+        console.error(`❌ Failed to read tweet: ${result.error} | Sweetistics fallback: ${fallback.error}`);
+        process.exit(1);
+      }
     } else {
       console.error(`❌ Failed to read tweet: ${result.error}`);
       process.exit(1);
@@ -440,6 +496,18 @@ program
 
     if (result.success && result.tweets) {
       printTweets(result.tweets, { json: cmdOpts.json, emptyMessage: 'No replies found.' });
+    } else if (sweetistics.apiKey) {
+      console.error(`⚠️ GraphQL replies failed (${result.error}); trying Sweetistics fallback...`);
+      const fallback = await new SweetisticsClient({
+        baseUrl: sweetistics.baseUrl,
+        apiKey: sweetistics.apiKey,
+      }).replies(tweetId);
+      if (fallback.success && fallback.tweets) {
+        printTweets(fallback.tweets, { json: cmdOpts.json, emptyMessage: 'No replies found.' });
+      } else {
+        console.error(`❌ Failed to fetch replies: ${result.error} | Sweetistics fallback: ${fallback.error}`);
+        process.exit(1);
+      }
     } else {
       console.error(`❌ Failed to fetch replies: ${result.error}`);
       process.exit(1);
@@ -497,6 +565,17 @@ program
 
     if (result.success && result.tweets) {
       printTweets(result.tweets, { json: cmdOpts.json, emptyMessage: 'No thread tweets found.' });
+    } else if (sweetistics.apiKey) {
+      console.error(`⚠️ GraphQL thread failed (${result.error}); trying Sweetistics fallback...`);
+      const fallback = await new SweetisticsClient({ baseUrl: sweetistics.baseUrl, apiKey: sweetistics.apiKey }).thread(
+        tweetId,
+      );
+      if (fallback.success && fallback.tweets) {
+        printTweets(fallback.tweets, { json: cmdOpts.json, emptyMessage: 'No thread tweets found.' });
+      } else {
+        console.error(`❌ Failed to fetch thread: ${result.error} | Sweetistics fallback: ${fallback.error}`);
+        process.exit(1);
+      }
     } else {
       console.error(`❌ Failed to fetch thread: ${result.error}`);
       process.exit(1);
@@ -556,6 +635,18 @@ program
 
     if (result.success && result.tweets) {
       printTweets(result.tweets, { json: cmdOpts.json, emptyMessage: 'No tweets found.' });
+    } else if (sweetistics.apiKey) {
+      console.error(`⚠️ GraphQL search failed (${result.error}); trying Sweetistics fallback...`);
+      const fallback = await new SweetisticsClient({ baseUrl: sweetistics.baseUrl, apiKey: sweetistics.apiKey }).search(
+        query,
+        count,
+      );
+      if (fallback.success && fallback.tweets) {
+        printTweets(fallback.tweets, { json: cmdOpts.json, emptyMessage: 'No tweets found.' });
+      } else {
+        console.error(`❌ Search failed: ${result.error} | Sweetistics fallback: ${fallback.error}`);
+        process.exit(1);
+      }
     } else {
       console.error(`❌ Search failed: ${result.error}`);
       process.exit(1);
@@ -610,6 +701,18 @@ program
 
     if (result.success && result.tweets) {
       printTweets(result.tweets, { json: cmdOpts.json, emptyMessage: 'No mentions found.' });
+    } else if (sweetistics.apiKey) {
+      console.error(`⚠️ GraphQL mentions failed (${result.error}); trying Sweetistics fallback...`);
+      const fallback = await new SweetisticsClient({ baseUrl: sweetistics.baseUrl, apiKey: sweetistics.apiKey }).search(
+        '@clawdbot',
+        count,
+      );
+      if (fallback.success && fallback.tweets) {
+        printTweets(fallback.tweets, { json: cmdOpts.json, emptyMessage: 'No mentions found.' });
+      } else {
+        console.error(`❌ Failed to fetch mentions: ${result.error} | Sweetistics fallback: ${fallback.error}`);
+        process.exit(1);
+      }
     } else {
       console.error(`❌ Failed to fetch mentions: ${result.error}`);
       process.exit(1);
@@ -635,14 +738,14 @@ program
           ? 'Sweetistics API key'
           : 'none'
         : opts.chromeProfile
-            ? `Chrome profile "${opts.chromeProfile}"`
-            : opts.firefoxProfile
-                ? `Firefox profile "${opts.firefoxProfile}"`
-                : config.chromeProfile
-                    ? `Chrome profile "${config.chromeProfile}"`
-                    : config.firefoxProfile
-                        ? `Firefox profile "${config.firefoxProfile}"`
-                        : 'env/auto-detected cookies';
+          ? `Chrome profile "${opts.chromeProfile}"`
+          : opts.firefoxProfile
+            ? `Firefox profile "${opts.firefoxProfile}"`
+            : config.chromeProfile
+              ? `Chrome profile "${config.chromeProfile}"`
+              : config.firefoxProfile
+                ? `Firefox profile "${config.firefoxProfile}"`
+                : 'env/auto-detected cookies';
 
     if (useSweetistics) {
       if (!sweetistics.apiKey) {
@@ -699,6 +802,25 @@ program
       console.log(`⚙️ Engine: ${resolvedEngine}`);
       console.log(`🔑 Credentials: ${credentialSource}`);
     } else {
+      // Fallback: try Sweetistics if available
+      if (sweetistics.apiKey) {
+        const fallback = await new SweetisticsClient({
+          baseUrl: sweetistics.baseUrl,
+          apiKey: sweetistics.apiKey,
+        }).getCurrentUser();
+        if (fallback.success && fallback.user) {
+          const handle = fallback.user.username ? `@${fallback.user.username}` : '(no handle)';
+          const name = fallback.user.name || handle;
+          console.log(`🙋 Logged in via Sweetistics as ${handle} (${name})`);
+          console.log(`🪪 User ID: ${fallback.user.id}`);
+          if (fallback.user.email) {
+            console.log(`📧 ${fallback.user.email}`);
+          }
+          console.log('⚙️ Engine: sweetistics (fallback)');
+          console.log('🔑 Credentials: Sweetistics API key');
+          return;
+        }
+      }
       console.error(`❌ Failed to determine current user: ${result.error ?? 'Unknown error'}`);
       process.exit(1);
     }
