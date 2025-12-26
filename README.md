@@ -95,7 +95,7 @@ Environment shortcuts:
 
 ## Version
 
-`bird --version` prints `package.json` version plus current git sha when available, e.g. `0.1.1 (3df7969b)`.
+`bird --version` prints `package.json` version plus current git sha when available, e.g. `0.2.0 (3df7969b)`.
 
 ## Media uploads (Sweetistics only)
 

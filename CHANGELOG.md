@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.2 — Unreleased
+## 0.2.0 — Unreleased
 
 ### Fixed
 - CLI `--version`: read version from `package.json`/`VERSION` (no hardcoded string) + append git sha when available.
