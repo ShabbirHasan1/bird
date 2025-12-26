@@ -753,6 +753,54 @@ describe('TwitterClient', () => {
       expect(result.user?.id).toBe('999');
       expect(mockFetch).toHaveBeenCalledTimes(5);
     });
+
+    it('skips an endpoint when JSON parsing fails', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => {
+            throw new Error('bad json');
+          },
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            user_id: '12345',
+            screen_name: 'tester',
+            name: 'Test User',
+          }),
+        });
+
+      const client = new TwitterClient({ cookies: validCookies });
+      const result = await client.getCurrentUser();
+
+      expect(result.success).toBe(true);
+      expect(result.user).toEqual({ id: '12345', username: 'tester', name: 'Test User' });
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('continues on fetch errors and still succeeds via HTML fallback', async () => {
+      mockFetch
+        .mockRejectedValueOnce(new Error('boom'))
+        .mockResolvedValueOnce({ ok: false, status: 404, text: async () => 'not found' })
+        .mockResolvedValueOnce({ ok: false, status: 404, text: async () => 'not found' })
+        .mockResolvedValueOnce({ ok: false, status: 404, text: async () => 'not found' })
+        .mockRejectedValueOnce(new Error('settings boom'))
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          text: async () => '<html>"screen_name":"fallback","user_id":"999"</html>',
+        });
+
+      const client = new TwitterClient({ cookies: validCookies });
+      const result = await client.getCurrentUser();
+
+      expect(result.success).toBe(true);
+      expect(result.user?.username).toBe('fallback');
+      expect(result.user?.id).toBe('999');
+    });
   });
 
   describe('search', () => {
@@ -831,6 +879,47 @@ describe('TwitterClient', () => {
       expect(urlVars).toBeTruthy();
       const parsed = JSON.parse(urlVars as string) as { rawQuery?: string };
       expect(parsed.rawQuery).toBe('needle');
+    });
+
+    it('refreshes query IDs when all search endpoints 404', async () => {
+      mockFetch
+        .mockResolvedValueOnce({ ok: false, status: 404, text: async () => '' })
+        .mockResolvedValueOnce({ ok: false, status: 404, text: async () => '' })
+        .mockResolvedValueOnce({ ok: false, status: 404, text: async () => '' })
+        .mockResolvedValueOnce({ ok: false, status: 404, text: async () => '' })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            data: {
+              search_by_raw_query: {
+                search_timeline: {
+                  timeline: {
+                    instructions: [],
+                  },
+                },
+              },
+            },
+          }),
+        });
+
+      const client = new TwitterClient({ cookies: validCookies });
+      const result = await client.search('hello', 5);
+
+      expect(result.success).toBe(true);
+      expect(mockFetch).toHaveBeenCalledTimes(5);
+    });
+
+    it('returns an unknown error when no query IDs are available', async () => {
+      const client = new TwitterClient({ cookies: validCookies });
+      (client as unknown as { getSearchTimelineQueryIds: () => Promise<string[]> }).getSearchTimelineQueryIds =
+        async () => [];
+
+      const result = await client.search('hello', 5);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Unknown error fetching search results');
+      expect(mockFetch).not.toHaveBeenCalled();
     });
   });
 

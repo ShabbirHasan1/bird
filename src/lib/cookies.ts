@@ -5,7 +5,7 @@
 
 import { execSync } from 'node:child_process';
 import { createDecipheriv, pbkdf2Sync } from 'node:crypto';
-import { copyFileSync, existsSync, mkdtempSync, readdirSync, rmSync, readFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
