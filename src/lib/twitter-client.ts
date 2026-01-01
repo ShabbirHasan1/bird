@@ -928,10 +928,7 @@ export class TwitterClient {
     instructions:
       | Array<{
           entries?: Array<{
-            content?: {
-              cursorType?: string;
-              value?: string;
-            };
+            content?: unknown;
           }>;
         }>
       | undefined,
@@ -939,7 +936,7 @@ export class TwitterClient {
   ): string | undefined {
     for (const instruction of instructions ?? []) {
       for (const entry of instruction.entries ?? []) {
-        const content = entry.content;
+        const content = entry.content as { cursorType?: unknown; value?: unknown } | undefined;
         if (content?.cursorType === cursorType && typeof content.value === 'string' && content.value.length > 0) {
           return content.value;
         }
