@@ -51,6 +51,9 @@ bird mentions --user @steipete -n 5
 # Bookmarks
 bird bookmarks -n 5
 
+# Likes
+bird likes -n 5
+
 # Refresh GraphQL query IDs cache (no rebuild)
 bird query-ids --fresh
 ```
@@ -68,6 +71,7 @@ bird query-ids --fresh
 - `bird search "<query>" [-n count] [--json]` — search for tweets matching a query.
 - `bird mentions [-n count] [--user @handle] [--json]` — find tweets mentioning a user (defaults to the authenticated user).
 - `bird bookmarks [-n count] [--json]` — list your bookmarked tweets.
+- `bird likes [-n count] [--json]` — list your liked tweets.
 - `bird whoami` — print which Twitter account your cookies belong to.
 - `bird check` — show which credentials are available and where they were sourced from.
 
