@@ -163,18 +163,20 @@ export function withHome<TBase extends AbstractConstructor<TwitterClientBase>>(
           return { success: false, error: page.error };
         }
 
+        let added = 0;
         for (const tweet of page.tweets) {
           if (seen.has(tweet.id)) {
             continue;
           }
           seen.add(tweet.id);
           tweets.push(tweet);
+          added += 1;
           if (tweets.length >= count) {
             break;
           }
         }
 
-        if (!page.cursor || page.cursor === cursor || page.tweets.length === 0) {
+        if (!page.cursor || page.cursor === cursor || page.tweets.length === 0 || added === 0) {
           break;
         }
         cursor = page.cursor;

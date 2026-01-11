@@ -62,7 +62,7 @@ describe('TwitterClient home timeline', () => {
 
   beforeEach(() => {
     mockFetch = vi.fn();
-    global.fetch = mockFetch;
+    global.fetch = mockFetch as unknown as typeof fetch;
   });
 
   describe('getHomeTimeline', () => {
@@ -248,6 +248,97 @@ describe('TwitterClient home timeline', () => {
       expect(result.tweets).toHaveLength(2);
       expect(result.tweets?.[0].id).toBe('tweet1');
       expect(result.tweets?.[1].id).toBe('tweet2');
+    });
+
+    it('stops when a page only returns duplicates', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            home: {
+              home_timeline_urt: {
+                instructions: [
+                  {
+                    entries: [
+                      {
+                        content: {
+                          itemContent: {
+                            tweet_results: {
+                              result: {
+                                rest_id: 'tweet1',
+                                legacy: { full_text: 'First tweet', created_at: 'Mon Jan 06 00:00:00 +0000 2025' },
+                                core: {
+                                  user_results: {
+                                    result: { rest_id: 'u1', legacy: { screen_name: 'user1', name: 'User 1' } },
+                                  },
+                                },
+                              },
+                            },
+                          },
+                        },
+                      },
+                      {
+                        content: {
+                          cursorType: 'Bottom',
+                          value: 'cursor123',
+                        },
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+        }),
+      });
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            home: {
+              home_timeline_urt: {
+                instructions: [
+                  {
+                    entries: [
+                      {
+                        content: {
+                          itemContent: {
+                            tweet_results: {
+                              result: {
+                                rest_id: 'tweet1',
+                                legacy: { full_text: 'First tweet', created_at: 'Mon Jan 06 00:00:00 +0000 2025' },
+                                core: {
+                                  user_results: {
+                                    result: { rest_id: 'u1', legacy: { screen_name: 'user1', name: 'User 1' } },
+                                  },
+                                },
+                              },
+                            },
+                          },
+                        },
+                      },
+                      {
+                        content: {
+                          cursorType: 'Bottom',
+                          value: 'cursor456',
+                        },
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+        }),
+      });
+
+      const client = new TwitterClient({ cookies: validCookies });
+      const result = await client.getHomeTimeline(5);
+
+      expect(result.success).toBe(true);
+      expect(result.tweets).toHaveLength(1);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
     });
   });
 });
