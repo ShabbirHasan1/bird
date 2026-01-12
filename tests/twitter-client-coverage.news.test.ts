@@ -24,7 +24,7 @@ const makeResponse = (overrides: Partial<ResponseLike> = {}): ResponseLike => ({
 });
 
 // Helper to create GenericTimelineById response structure
-const makeTimelineResponse = (items: any[]) => ({
+const makeTimelineResponse = (items: unknown[]) => ({
   data: {
     timeline: {
       timeline: {
@@ -43,6 +43,21 @@ const makeTimelineResponse = (items: any[]) => ({
                 ],
               },
             })),
+          },
+        ],
+      },
+    },
+  },
+});
+
+const makeTimelineResponseWithInstruction = (type: string, entries: unknown[]) => ({
+  data: {
+    timeline: {
+      timeline: {
+        instructions: [
+          {
+            type,
+            entries,
           },
         ],
       },
@@ -162,9 +177,7 @@ describe('TwitterClient news API coverage', () => {
     });
 
     it('returns error when no news items found', async () => {
-      const mockFetch = vi
-        .fn()
-        .mockResolvedValue(makeResponse({ json: async () => makeTimelineResponse([]) }));
+      const mockFetch = vi.fn().mockResolvedValue(makeResponse({ json: async () => makeTimelineResponse([]) }));
 
       global.fetch = mockFetch as unknown as typeof fetch;
 
@@ -243,6 +256,71 @@ describe('TwitterClient news API coverage', () => {
 
       expect(result.success).toBe(true);
       expect(result.items?.length).toBe(2);
+    });
+
+    it('parses entries from non-TimelineAddEntries instructions', async () => {
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValueOnce(
+          makeResponse({
+            json: async () =>
+              makeTimelineResponseWithInstruction('TimelineReplaceEntry', [
+                {
+                  entryId: 'replace-entry-1',
+                  content: {
+                    itemContent: {
+                      is_ai_trend: true,
+                      name: 'Replacement headline',
+                    },
+                  },
+                },
+              ]),
+          }),
+        )
+        .mockResolvedValue(makeResponse({ json: async () => makeTimelineResponse([]) }));
+
+      global.fetch = mockFetch as unknown as typeof fetch;
+
+      const client = new TwitterClient({ cookies: validCookies });
+      const result = await client.getNews(1);
+
+      expect(result.success).toBe(true);
+      expect(result.items?.[0].headline).toBe('Replacement headline');
+    });
+
+    it('assigns unique ids for module entries', async () => {
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValueOnce(
+          makeResponse({
+            json: async () =>
+              makeTimelineResponseWithInstruction('TimelineAddEntries', [
+                {
+                  entryId: 'module-entry',
+                  content: {
+                    items: [
+                      {
+                        item: { itemContent: { is_ai_trend: true, name: 'Headline A' } },
+                      },
+                      {
+                        item: { itemContent: { is_ai_trend: true, name: 'Headline B' } },
+                      },
+                    ],
+                  },
+                },
+              ]),
+          }),
+        )
+        .mockResolvedValue(makeResponse({ json: async () => makeTimelineResponse([]) }));
+
+      global.fetch = mockFetch as unknown as typeof fetch;
+
+      const client = new TwitterClient({ cookies: validCookies });
+      const result = await client.getNews(2);
+
+      expect(result.success).toBe(true);
+      const ids = result.items?.map((item) => item.id) ?? [];
+      expect(new Set(ids).size).toBe(ids.length);
     });
   });
 });

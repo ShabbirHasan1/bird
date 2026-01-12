@@ -96,7 +96,7 @@ export function withNews<TBase extends AbstractConstructor<TwitterClientBase>>(
         }
 
         try {
-          const tabItems = await this.fetchTimelineTab(tab, timelineId, count, aiOnly, includeRaw, debug);
+          const tabItems = await this.fetchTimelineTab(tab, timelineId, count, aiOnly, includeRaw);
 
           // Deduplicate across tabs
           for (const item of tabItems) {
@@ -107,9 +107,7 @@ export function withNews<TBase extends AbstractConstructor<TwitterClientBase>>(
           }
 
           if (debug) {
-            console.error(
-              `[getNews] Tab ${tab}: found ${tabItems.length} items, total unique: ${allItems.length}`,
-            );
+            console.error(`[getNews] Tab ${tab}: found ${tabItems.length} items, total unique: ${allItems.length}`);
           }
 
           // Stop early if we have enough
@@ -147,7 +145,6 @@ export function withNews<TBase extends AbstractConstructor<TwitterClientBase>>(
       maxCount: number,
       aiOnly: boolean,
       includeRaw: boolean,
-      debug: boolean,
     ): Promise<NewsItem[]> {
       const queryId = await this.getQueryId('GenericTimelineById');
       const features = buildExploreFeatures();
@@ -220,11 +217,10 @@ export function withNews<TBase extends AbstractConstructor<TwitterClientBase>>(
       const instructions = timeline.instructions || [];
 
       for (const instruction of instructions) {
-        if (instruction.type !== 'TimelineAddEntries') {
+        const entries = instruction.entries ?? (instruction.entry ? [instruction.entry] : []);
+        if (!entries || entries.length === 0) {
           continue;
         }
-
-        const entries = instruction.entries || [];
 
         for (const entry of entries) {
           if (items.length >= maxCount) {
@@ -285,8 +281,6 @@ export function withNews<TBase extends AbstractConstructor<TwitterClientBase>>(
       return items;
     }
 
-    // biome-ignore lint/suspicious/noExplicitAny: API response structure is complex
-
     private parseNewsItemFromContent(
       // biome-ignore lint/suspicious/noExplicitAny: API response structure is complex
       itemContent: any,
@@ -301,6 +295,9 @@ export function withNews<TBase extends AbstractConstructor<TwitterClientBase>>(
       if (!headline) {
         return null;
       }
+
+      const trendMetadata = itemContent?.trend_metadata;
+      const trendUrl = itemContent.trend_url?.url || trendMetadata?.url?.url;
 
       // Detect AI news by characteristics:
       // 1. Full sentence headlines (contains spaces and is longer)
@@ -360,7 +357,6 @@ export function withNews<TBase extends AbstractConstructor<TwitterClientBase>>(
       }
 
       // Parse trend metadata
-      const trendMetadata = itemContent?.trend_metadata;
       if (trendMetadata?.meta_description) {
         const metaDesc = trendMetadata.meta_description;
         const postMatch = metaDesc.match(POST_COUNT_MATCH_REGEX);
@@ -385,13 +381,13 @@ export function withNews<TBase extends AbstractConstructor<TwitterClientBase>>(
       }
 
       const item: NewsItem = {
-        id: entryId || `${source}-${headline}`,
+        id: trendUrl ?? (entryId ? `${entryId}-${headline}` : `${source}-${headline}`),
         headline,
         category: isAiNews ? `AI · ${category}` : category,
         timeAgo,
         postCount,
         description: itemContent.description,
-        url: itemContent.trend_url?.url || trendMetadata?.url?.url,
+        url: trendUrl,
       };
 
       if (includeRaw) {

@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CliContext } from '../src/cli/shared.js';
 import { registerNewsCommand } from '../src/commands/news.js';
+import { TwitterClient } from '../src/lib/twitter-client.js';
 
 describe('news command', () => {
   let program: Command;
@@ -149,6 +150,38 @@ describe('news command', () => {
     } finally {
       exitSpy.mockRestore();
       errorSpy.mockRestore();
+    }
+  });
+
+  it('limits related tweets to tweets-per-item in CLI output', async () => {
+    registerNewsCommand(program, mockContext as CliContext);
+    const getNewsSpy = vi.spyOn(TwitterClient.prototype, 'getNews').mockResolvedValue({
+      success: true,
+      items: [
+        {
+          id: 'item-1',
+          headline: 'News headline',
+          category: 'News',
+          tweets: [
+            { id: 't1', text: 'first tweet', author: { username: 'a', name: 'A' } },
+            { id: 't2', text: 'second tweet', author: { username: 'b', name: 'B' } },
+            { id: 't3', text: 'third tweet', author: { username: 'c', name: 'C' } },
+          ],
+        },
+      ],
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    try {
+      await program.parseAsync(['node', 'bird', 'news', '--with-tweets', '--tweets-per-item', '2', '--count', '1']);
+      expect(getNewsSpy).toHaveBeenCalledWith(1, expect.objectContaining({ tweetsPerItem: 2, withTweets: true }));
+      const tweetLines = logSpy.mock.calls
+        .map((call) => String(call[0]))
+        .filter((line) => line.trimStart().startsWith('@'));
+      expect(tweetLines).toHaveLength(2);
+    } finally {
+      getNewsSpy.mockRestore();
+      logSpy.mockRestore();
     }
   });
 });

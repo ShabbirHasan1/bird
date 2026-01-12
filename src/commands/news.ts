@@ -16,7 +16,7 @@ function formatPostCount(count: number): string {
 function printNewsItems(
   items: NewsItem[],
   ctx: CliContext,
-  opts: { json?: boolean; emptyMessage?: string } = {},
+  opts: { json?: boolean; emptyMessage?: string; tweetLimit?: number } = {},
 ): void {
   if (opts.json) {
     console.log(JSON.stringify(items, null, 2));
@@ -54,7 +54,8 @@ function printNewsItems(
     // Print related tweets if available
     if (item.tweets && item.tweets.length > 0) {
       console.log(`  ${ctx.colors.section('Related tweets:')}`);
-      for (const tweet of item.tweets.slice(0, 3)) {
+      const tweetLimit = opts.tweetLimit ?? item.tweets.length;
+      for (const tweet of item.tweets.slice(0, tweetLimit)) {
         console.log(
           `    @${tweet.author.username}: ${tweet.text.slice(0, 100)}${tweet.text.length > 100 ? '...' : ''}`,
         );
@@ -69,7 +70,7 @@ export function registerNewsCommand(program: Command, ctx: CliContext): void {
   program
     .command('news')
     .alias('trending')
-    .description("Fetch AI-curated news and trending topics from Explore tabs")
+    .description('Fetch AI-curated news and trending topics from Explore tabs')
     .option('-n, --count <number>', 'Number of items to fetch', '10')
     .option('--ai-only', 'Show only AI-curated news items')
     .option('--with-tweets', 'Also fetch related tweets for each news item')
@@ -124,11 +125,21 @@ export function registerNewsCommand(program: Command, ctx: CliContext): void {
 
         // Determine which tabs to fetch from
         const tabs: ExploreTab[] = [];
-        if (cmdOpts.forYou) tabs.push('forYou');
-        if (cmdOpts.newsOnly) tabs.push('news');
-        if (cmdOpts.sports) tabs.push('sports');
-        if (cmdOpts.entertainment) tabs.push('entertainment');
-        if (cmdOpts.trendingOnly) tabs.push('trending');
+        if (cmdOpts.forYou) {
+          tabs.push('forYou');
+        }
+        if (cmdOpts.newsOnly) {
+          tabs.push('news');
+        }
+        if (cmdOpts.sports) {
+          tabs.push('sports');
+        }
+        if (cmdOpts.entertainment) {
+          tabs.push('entertainment');
+        }
+        if (cmdOpts.trendingOnly) {
+          tabs.push('trending');
+        }
 
         // If no specific tabs selected, use defaults (all tabs except trending)
         const tabsToFetch = tabs.length > 0 ? tabs : undefined;
@@ -150,6 +161,7 @@ export function registerNewsCommand(program: Command, ctx: CliContext): void {
           printNewsItems(result.items, ctx, {
             json: cmdOpts.json || cmdOpts.jsonFull,
             emptyMessage: 'No news items found.',
+            tweetLimit: withTweets ? tweetsPerItem : undefined,
           });
         } else {
           console.error(`${ctx.p('err')}Failed to fetch news: ${result.error}`);
