@@ -4,6 +4,7 @@
 
 ### Added
 - `bookmarks` thread expansion controls (`--expand-root-only`, `--author-chain`, `--author-only`, `--full-chain-only`, `--include-ancestor-branches`, `--include-parent`, `--thread-meta`, `--sort-chronological`) for richer context exports (#55) — thanks @kkretschmer2.
+- `--chrome-profile-dir` to point at Chromium profile directories or cookie DB files (Arc/Brave/etc) for cookie extraction (#16) — thanks @tekumara.
 
 ### Fixed
 - `bookmarks` expanded JSON now preserves pagination `nextCursor`, and full-chain filtering only includes ancestor branches when requested.

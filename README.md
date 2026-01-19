@@ -204,7 +204,8 @@ Global options:
 - `--auth-token <token>`: set the `auth_token` cookie manually.
 - `--ct0 <token>`: set the `ct0` cookie manually.
 - `--cookie-source <safari|chrome|firefox>`: choose browser cookie source (repeatable; order matters).
-- `--chrome-profile <name>`: Chrome profile for cookie extraction.
+- `--chrome-profile <name>`: Chrome profile name for cookie extraction (e.g., `Default`, `Profile 2`).
+- `--chrome-profile-dir <path>`: Chrome/Chromium profile directory or cookie DB path for cookie extraction.
 - `--firefox-profile <name>`: Firefox profile for cookie extraction.
 - `--cookie-timeout <ms>`: cookie extraction timeout for keychain/OS helpers (milliseconds).
 - `--timeout <ms>`: abort requests after the given timeout (milliseconds).
@@ -234,6 +235,7 @@ Browser cookie sources:
 - Safari: `~/Library/Cookies/Cookies.binarycookies` (fallback: `~/Library/Containers/com.apple.Safari/Data/Library/Cookies/Cookies.binarycookies`)
 - Chrome: `~/Library/Application Support/Google/Chrome/<Profile>/Cookies`
 - Firefox: `~/Library/Application Support/Firefox/Profiles/<profile>/cookies.sqlite`
+  - For Chromium variants (Arc/Brave/etc), pass a profile directory or cookie DB via `--chrome-profile-dir`.
 
 ## Config (JSON5)
 
@@ -248,6 +250,7 @@ Example `~/.config/bird/config.json5`:
 {
   // Cookie source order for browser extraction (string or array)
   cookieSource: ["firefox", "safari"],
+  chromeProfileDir: "/path/to/Chromium/Profile",
   firefoxProfile: "default-release",
   cookieTimeoutMs: 30000,
   timeoutMs: 20000,
